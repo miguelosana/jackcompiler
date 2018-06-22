@@ -40,8 +40,8 @@ public class JackCompiler {
 
 					tokenizer.setInputFile(inputFile);
 					compEngine.setFileName(outputFileName);
-					
 					tokenizer.advance();
 					compEngine.compileClass();
+
 	}
 }

@@ -2,9 +2,11 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
+import java.io.StreamTokenizer;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Scanner;
+import java.util.Stack;
 import java.util.StringTokenizer;
 import java.util.regex.Pattern;
 
@@ -14,10 +16,12 @@ public class JackTokenizer {
 	
 	private BufferedReader bufferedReader = null;
 	private String currentToken;
-	private Scanner scanner;
+	private FileReader fileReader;
+	private StreamTokenizer scanner;
 	private String currentLine;
 	private String nextLine;
 	private Pattern pattern;
+	private int tempToken;
 	private String[] keywords= {"class","constructor","function","method","field", "static", "var","int","char","boolean",
 			"void","true","false","null","this","let","do","if","else","return"};
 	private String[] symbols = {"{","}","(",")","[","]",".",",",",",";","+","-","*","/","&","|","<",">","=","~"};
@@ -27,8 +31,8 @@ public class JackTokenizer {
 		LET, DO, IF, ELSE, WHILE, RETURN, TRUE, FALSE, NULL, THIS};
 	public HashMap<String,keyWord> keyWordMap = new HashMap<String,keyWord>();
 JackTokenizer()	{
-		this.pattern = Pattern.compile("(\\w+|\\(|\\)|\\{|\\}|;|\\=|\\+|\\*|\\-|\\.|\\,|\\/|\\&|\\||\\<|\\>|\\=|\\~)");
-	
+		this.pattern = Pattern.compile("(([a-zA-Z_0-9]+)\\(|\\)|\\{|\\}|;|\\=|\\+|\\*|\\-|\\.|,|\\/|\\&|\\||\\<|\\>|\\=|\\~)");
+		System.out.println(this.pattern.pattern());
 	keyWordMap.put("class",       keyWord.CLASS);
 	keyWordMap.put("method",      keyWord.METHOD);
 	keyWordMap.put("function",    keyWord.FUNCTION);
@@ -55,26 +59,87 @@ JackTokenizer()	{
 }
 
 public void setInputFile(File inputFile) {
-	
+
 	try {
-		this.scanner =new Scanner(inputFile);
+		this.bufferedReader = new BufferedReader(new FileReader(inputFile));
+		this.scanner = new StreamTokenizer(this.bufferedReader);
+		this.scanner.ordinaryChar('(');
+		this.scanner.ordinaryChar(')');
+		this.scanner.ordinaryChar('{');
+		this.scanner.ordinaryChar('}');
+		this.scanner.ordinaryChar(';');
+		this.scanner.ordinaryChar('=');
+		this.scanner.ordinaryChar('+');
+		this.scanner.ordinaryChar('*');
+		this.scanner.ordinaryChar('-');
+		this.scanner.ordinaryChar('.');
+		this.scanner.ordinaryChar(',');
+		//this.scanner.ordinaryChar('/');
+		this.scanner.ordinaryChar('&');
+		this.scanner.ordinaryChar('|');;
+		this.scanner.ordinaryChar('<');
+		this.scanner.ordinaryChar('>');
+		this.scanner.ordinaryChar('~');
+		
+		
 	}catch(IOException ex) {
 		ex.printStackTrace();
 	}
 }
 
 public boolean hasMoreTokens() throws IOException {
-	return scanner.hasNext(this.pattern);
+	mark();
+	this.tempToken = this.scanner.nextToken();
+	return this.tempToken != StreamTokenizer.TT_EOF;
+}
+
+
+public void advance() throws IOException {
+	if(hasMoreTokens()) {
+		setToken();
+	System.out.println(this.currentToken);
+	}
 	
 }
 
-public void advance() {
-	this.currentToken = scanner.next(this.pattern);
+private void setToken() {
+	
+	if(this.scanner.ttype == StreamTokenizer.TT_NUMBER) {
+		this.currentToken = Double.toString(this.scanner.nval);
+	}
+	else if(this.scanner.ttype == StreamTokenizer.TT_WORD) {
+		this.currentToken = this.scanner.sval;
+	}else {
+		this.currentToken = String.valueOf((char)this.tempToken);
+	}
+}
+public void pushBack() throws IOException {
+	this.bufferedReader.reset();
+	setToken();
+}
+public void mark() throws IOException {
+	this.bufferedReader.mark(1);
+}
+public boolean readNextLine() throws IOException {
+	String tempLine = this.bufferedReader.readLine().replaceAll("//.*$", "").replaceAll("/\\*\\*.*\\*/", "");
+	if(tempLine.startsWith("/**")) {
+		while(!tempLine.endsWith("*/") || tempLine.startsWith("/**")) {
+			tempLine = this.bufferedReader.readLine();
+		}
+
+	}
+	if(tempLine.equals("")) {
+		return readNextLine();
+	}
+	
+	this.currentLine = tempLine;
+	
+	return this.currentLine == null;
 	
 }
 
 public tokenType tokenType() {
-	if(Arrays.asList(keywords).contains(this.currentToken)) {
+	if(keyWordMap.containsKey(this.currentToken)) {
 		return tokenType.KEYWORD;
 	}
 	if(Arrays.asList(symbols).contains(this.currentToken)) {
@@ -92,6 +157,7 @@ public tokenType tokenType() {
 		}
 
 	}
+
 	return tokenType.IDENTIFIER; //really?
 	
 }
