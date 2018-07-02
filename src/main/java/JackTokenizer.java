@@ -3,6 +3,7 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.StreamTokenizer;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Scanner;
@@ -10,7 +11,6 @@ import java.util.Stack;
 import java.util.StringTokenizer;
 import java.util.regex.Pattern;
 
-import org.apache.commons.lang3.StringUtils;
 
 public class JackTokenizer {
 	
@@ -21,7 +21,9 @@ public class JackTokenizer {
 	private String currentLine;
 	private String nextLine;
 	private Pattern pattern;
+	private ArrayList<String> tokenStack = new ArrayList<String>();
 	private int tempToken;
+	private int pointer;
 	private String[] keywords= {"class","constructor","function","method","field", "static", "var","int","char","boolean",
 			"void","true","false","null","this","let","do","if","else","return"};
 	private String[] symbols = {"{","}","(",")","[","]",".",",",",",";","+","-","*","/","&","|","<",">","=","~"};
@@ -31,7 +33,7 @@ public class JackTokenizer {
 		LET, DO, IF, ELSE, WHILE, RETURN, TRUE, FALSE, NULL, THIS};
 	public HashMap<String,keyWord> keyWordMap = new HashMap<String,keyWord>();
 JackTokenizer()	{
-		this.pattern = Pattern.compile("(([a-zA-Z_0-9]+)\\(|\\)|\\{|\\}|;|\\=|\\+|\\*|\\-|\\.|,|\\/|\\&|\\||\\<|\\>|\\=|\\~)");
+		this.pattern = Pattern.compile("(([ws]+)|([a-zA-Z_0-9]+)|\\(|\\)|\\{|\\}|;|\\=|\\+|\\*|\\-|\\.|,|\\/|\\&|\\||\\<|\\>|\\=|\\~)");
 		System.out.println(this.pattern.pattern());
 	keyWordMap.put("class",       keyWord.CLASS);
 	keyWordMap.put("method",      keyWord.METHOD);
@@ -58,11 +60,13 @@ JackTokenizer()	{
 	
 }
 
-public void setInputFile(File inputFile) {
+public void setInputFile(File inputFile) throws IOException {
 
 	try {
 		this.bufferedReader = new BufferedReader(new FileReader(inputFile));
 		this.scanner = new StreamTokenizer(this.bufferedReader);
+		this.scanner.slashSlashComments(true);
+		this.scanner.slashStarComments(true);
 		this.scanner.ordinaryChar('(');
 		this.scanner.ordinaryChar(')');
 		this.scanner.ordinaryChar('{');
@@ -74,29 +78,36 @@ public void setInputFile(File inputFile) {
 		this.scanner.ordinaryChar('-');
 		this.scanner.ordinaryChar('.');
 		this.scanner.ordinaryChar(',');
-		//this.scanner.ordinaryChar('/');
+		this.scanner.ordinaryChar('/');
 		this.scanner.ordinaryChar('&');
 		this.scanner.ordinaryChar('|');;
 		this.scanner.ordinaryChar('<');
 		this.scanner.ordinaryChar('>');
+
 		this.scanner.ordinaryChar('~');
+		this.scanner.quoteChar('"');
 		
 		
 	}catch(IOException ex) {
 		ex.printStackTrace();
 	}
+	
+	this.pointer = 0;
+	this.tokenStack.clear();
+	while((this.tempToken = this.scanner.nextToken()) != StreamTokenizer.TT_EOF) {
+			setToken();
+	}
 }
 
 public boolean hasMoreTokens() throws IOException {
-	mark();
-	this.tempToken = this.scanner.nextToken();
-	return this.tempToken != StreamTokenizer.TT_EOF;
+	return pointer < this.tokenStack.size();
 }
 
 
 public void advance() throws IOException {
 	if(hasMoreTokens()) {
-		setToken();
+		this.currentToken = this.tokenStack.get(this.pointer);
+		this.pointer++;
 	System.out.println(this.currentToken);
 	}
 	
@@ -105,26 +116,35 @@ public void advance() throws IOException {
 private void setToken() {
 	
 	if(this.scanner.ttype == StreamTokenizer.TT_NUMBER) {
-		this.currentToken = Double.toString(this.scanner.nval);
+		Double tmp = this.scanner.nval;
+		this.tokenStack.add(Integer.toString(tmp.intValue()));
 	}
 	else if(this.scanner.ttype == StreamTokenizer.TT_WORD) {
-		this.currentToken = this.scanner.sval;
+		this.tokenStack.add(this.scanner.sval);
 	}else {
-		this.currentToken = String.valueOf((char)this.tempToken);
+		if(this.tempToken == '"') {
+			this.tokenStack.add("string-constant:"+this.scanner.sval);
+		}else {
+		this.tokenStack.add(String.valueOf((char)this.tempToken));
+		}
 	}
 }
 public void pushBack() throws IOException {
-	this.bufferedReader.reset();
-	setToken();
-}
-public void mark() throws IOException {
-	this.bufferedReader.mark(1);
+	System.out.println(this.currentToken);
+	System.out.println(this.pointer);
+
+	this.pointer--;
+	this.currentToken = this.tokenStack.get(this.pointer);
+	System.out.println(this.pointer);
+	System.out.println(this.currentToken);
 }
 public boolean readNextLine() throws IOException {
 	String tempLine = this.bufferedReader.readLine().replaceAll("//.*$", "").replaceAll("/\\*\\*.*\\*/", "");
 	if(tempLine.startsWith("/**")) {
-		while(!tempLine.endsWith("*/") || tempLine.startsWith("/**")) {
+		boolean foundEnd = tempLine.endsWith("*/");
+		while(!foundEnd) {
 			tempLine = this.bufferedReader.readLine();
+			foundEnd = (tempLine.endsWith("*/") || tempLine.startsWith("*/"));
 		}
 
 	}
@@ -138,7 +158,7 @@ public boolean readNextLine() throws IOException {
 	
 }
 
-public tokenType tokenType() {
+public tokenType tokenType() throws IOException {
 	if(keyWordMap.containsKey(this.currentToken)) {
 		return tokenType.KEYWORD;
 	}
@@ -146,17 +166,15 @@ public tokenType tokenType() {
 		return tokenType.SYMBOL;
 	}
 	
-	if(StringUtils.isNumeric(this.currentToken)) {
+	if(isNumeric(this.currentToken)) {
 		return tokenType.INT_CONST;
 	}
-	if(this.currentToken.startsWith("\"")&& this.currentToken.endsWith("\"")) {
-		String temp = this.currentToken.substring(1, this.currentToken.length()-1);
-		if(!temp.contains("\"") && !temp.contains("\n")) {
-			this.currentToken = temp;
+	if(this.currentToken.startsWith("string-constant:")) {
+		this.currentToken.replace("string-constant:", "");
 			return tokenType.STRING_CONST;
-		}
-
 	}
+		
+
 
 	return tokenType.IDENTIFIER; //really?
 	
@@ -181,9 +199,38 @@ public int intVal() {
 	 return this.currentToken;
 	 
  }
-
+ public static boolean isNumeric(final CharSequence cs) {
+     if ((cs == null || cs.length() == 0)) {
+         return false;
+     }
+     final int sz = cs.length();
+     for (int i = 0; i < sz; i++) {
+         if (!Character.isDigit(cs.charAt(i))) {
+             return false;
+         }
+     }
+     return true;
+ }
  public String getCurrentToken() {
 	 return this.currentToken;
  }
-
+public boolean isOp() {
+	boolean result = false;
+	switch(this.currentToken) {
+	case "+":
+	case "-":
+	case "*":
+	case "/":
+	case "&":
+	case "|":
+	case "<":
+	case ">":
+	case "=":
+		result =true;
+		break;
+		
+		
+	}
+	return result;
+}
 }

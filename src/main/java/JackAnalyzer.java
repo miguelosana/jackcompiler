@@ -1,7 +1,7 @@
 import java.io.File;
 import java.io.IOException;
 
-public class JackCompiler {
+public class JackAnalyzer {
 
 	public static void main(String[] args) {
 		try {

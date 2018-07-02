@@ -214,7 +214,15 @@ public class CompilationEngine {
 		writeStartTag("letStatement",true);
 			writeKeyword("let");
 			this.tokenizer.advance();
-			writeVarName(false);
+			writeIdentifier();
+			if(this.tokenizer.getCurrentToken().equals("[")) {
+				writeSymbol("[");
+				compileExpression("]");
+				writeSymbol("]");
+			}
+			writeSymbol("=");
+			
+			compileExpression(";");
 			writeSymbol(";");
 		writeEndTag("letStatement");
 	}
@@ -250,117 +258,133 @@ public class CompilationEngine {
 	}
 	private void compileExpression(String endChar) throws IOException, Exception{
 		writeStartTag("expression", true);
-		while(!this.tokenizer.getCurrentToken().equals(endChar)) {
-			if(this.tokenizer.tokenType().equals(JackTokenizer.tokenType.SYMBOL)) {
-				writeSymbol(this.tokenizer.getCurrentToken());
-			}
+		String curToken = this.tokenizer.getCurrentToken();
+			writeStartTag("term",true);
+			
 			compileTerm();
-		}
+			writeEndTag("term");
+			do {
+				if(this.tokenizer.tokenType().equals(JackTokenizer.tokenType.SYMBOL) && this.tokenizer.isOp()) {
+					writeSymbol(this.tokenizer.getCurrentToken());
+					writeStartTag("term", true);
+					compileTerm();
+					writeEndTag("term");
+				}else {
+					break;
+				}
+			}
+			while(true);
+			curToken = this.tokenizer.getCurrentToken();
 		writeEndTag("expression");
-		this.tokenizer.advance();
+		this.bw.flush();
 	
 	}
 	
 	private void compileTerm() throws IOException, Exception{
+		this.bw.flush();	
+		if(this.tokenizer.tokenType().equals(JackTokenizer.tokenType.IDENTIFIER)){
+			String tempToken = this.tokenizer.getCurrentToken();
+			this.tokenizer.advance();
+			if(this.tokenizer.getCurrentToken().equals("[")) {
+				this.tokenizer.pushBack();this.tokenizer.pushBack();
+				writeIdentifier();
+				this.tokenizer.advance();
+				writeSymbol("[");
+				compileExpression("]");
+				writeSymbol("]");
+				return;
+				
+			}
+			if(this.tokenizer.getCurrentToken().equals(".")) {
+				this.tokenizer.pushBack();this.tokenizer.pushBack();
+				writeIdentifier();
+				this.tokenizer.advance();
+				writeSymbol(".");
+				writeSubroutineCall();
+				return;
+			}
+			if(this.tokenizer.getCurrentToken().equals("(")) {
+				this.tokenizer.pushBack();
+				writeIdentifier();
+				writeSubroutineCall();
+				return;
+				
+
+			}
+			this.tokenizer.pushBack();this.tokenizer.pushBack();
 			
-		String currentToken = this.tokenizer.getCurrentToken();
-		//expression
-		if(currentToken.equals("(")) {
+			this.bw.flush();
+			writeIdentifier();
+			this.tokenizer.advance();
+			return;
+
+		
+		}
+		if(this.tokenizer.tokenType().equals(JackTokenizer.tokenType.INT_CONST)) {
+			writeStartTag("integerConstant", false);
+			this.bw.write(this.tokenizer.getCurrentToken());
+			writeEndTag("integerConstant");
+			this.tokenizer.advance();
+			return;
+		}
+		if(this.tokenizer.tokenType().equals(JackTokenizer.tokenType.STRING_CONST)) {
+			writeStartTag("stringConstant", false);
+			this.bw.write(this.tokenizer.getCurrentToken().replaceAll("string-constant:", ""));
+			writeEndTag("stringConstant");
+			this.tokenizer.advance();
+			return;
+		}
+		if(this.tokenizer.tokenType().equals(JackTokenizer.tokenType.KEYWORD)) {
+			writeKeyword(this.tokenizer.getCurrentToken());
+			this.tokenizer.advance();
+			return;
+		}
+		if(this.tokenizer.getCurrentToken().equals("-") || this.tokenizer.getCurrentToken().equals("~")) {
+			writeStartTag("symbol",false);
+			this.bw.write(this.tokenizer.getCurrentToken());
+			writeEndTag("symbol");
+			this.tokenizer.advance();
+			writeStartTag("term", true);
+			compileTerm();
+			writeEndTag("term");
+			return;
+			
+		}
+		if(this.tokenizer.getCurrentToken().equals("(")) {
 			writeSymbol("(");
 			compileExpression(")");
 			writeSymbol(")");
 			return;
 		}
-		
-		if(currentToken.equals("-") || currentToken.equals("~")){
-			writeSymbol(currentToken);
-			compileTerm();
-			return;
-		}
-		
-		if(currentToken.matches("\\d+")) {
-			Integer intConst = Integer.parseInt(currentToken);
-			if(intConst < 0 || intConst > 32767 ) {
-				throw new Exception("Invalid integer constant");
-			}
-			writeStartTag("integerConstant", false);
-			this.bw.write(currentToken);
-			writeEndTag("integerConstant");
-			this.tokenizer.advance();
-			return;
-		}	
-		
-		if(currentToken.equals("\"")) {
-			this.tokenizer.advance();
-			String stringConstant = this.tokenizer.getCurrentToken();
-			this.tokenizer.advance();
-			if((stringConstant.contains("\"") || stringConstant.contains("\n")) && !this.tokenizer.getCurrentToken().equals("\"")) {
-				throw new Exception(String.format("%s is an invalid stringconstant", stringConstant));
-			}
-			writeStartTag("stringConstant", false);
-			this.bw.write(stringConstant);
-			writeEndTag("stringConstant");
-			this.tokenizer.advance();
-			return;
-		}
-		
-		if(currentToken.equals("true") || currentToken.equals("false") || currentToken.equals("null") || currentToken.equals("this")) {
-			writeStartTag("keywordConstant",false);
-			this.bw.write(currentToken);
-			writeEndTag("keywordConstant");
-			this.tokenizer.advance();
-			return;
-			
-			
-		}
-		this.tokenizer.advance();
-		if(this.tokenizer.getCurrentToken().equals("(")) {
-			this.tokenizer.pushBack();
-			writeSubroutineCall();
-			return;
-		}
-		
-		if(this.tokenizer.getCurrentToken().equals("[")) {
-			this.tokenizer.pushBack();
-			writeIdentifier();
-			writeSymbol("[");
-			compileExpression("]");
-			writeSymbol("]");
-			return;
-			
 
-		}
-		System.out.println(currentToken);
-		System.out.println("pushBack");
-		this.tokenizer.pushBack();
-		System.out.println(this.tokenizer.getCurrentToken());
-		writeIdentifier();
 	}
 	
 	private void writeExpressionList() throws IOException, Exception {
-		writeStartTag("expressionList", true);
 		compileExpression(",");
 		
 		boolean hasMore = this.tokenizer.getCurrentToken().equals(",");
 		while(hasMore || !this.tokenizer.getCurrentToken().equals(")")) {
-			this.tokenizer.advance();
+			writeSymbol(",");
+			compileExpression(",");
 			hasMore  = this.tokenizer.getCurrentToken().equals(",");
 		}
-		writeEndTag("expressionList");
 	}
 	private void writeSubroutineCall() throws IOException, Exception{
-		writeStartTag("subroutineName",true);
+	//	writeStartTag("subroutineName",true);
 			writeIdentifier();
 			if(this.tokenizer.getCurrentToken().equals(".")) {
 				writeSymbol(".");
 				writeIdentifier();
 			}
 			writeSymbol("(");
+			writeStartTag("expressionList", true);
 			if(!this.tokenizer.getCurrentToken().equals(")")) {
+
 				writeExpressionList();
 			}
+			writeEndTag("expressionList");
 			writeSymbol(")");
-		writeEndTag("subroutineName");
+	//	writeEndTag("subroutineName");
 		
 		
 	}
@@ -387,7 +411,7 @@ public class CompilationEngine {
 				hasMore = this.tokenizer.getCurrentToken().equals(",");
 			}
 			writeSymbol("=");
-			compileExpression("i");
+			compileExpression(";");
 			if(this.tokenizer.getCurrentToken().equals("|")) {
 				writeSymbol("|");
 				writeIdentifier();
@@ -486,7 +510,7 @@ public class CompilationEngine {
 		
 		
 	}
-	private boolean validType(String token) {
+	private boolean validType(String token) throws IOException {
 		boolean result =false;
 		if(token.equals("int") || token.equals("char") || token.equals("boolean") || this.tokenizer.tokenType().equals(JackTokenizer.tokenType.IDENTIFIER)) {
 			result = true;
